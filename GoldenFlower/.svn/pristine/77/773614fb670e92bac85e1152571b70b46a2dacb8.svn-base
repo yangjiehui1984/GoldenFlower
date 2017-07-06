@@ -1,0 +1,65 @@
+
+var NetData = cc.Class({
+    statics : {
+        g_Inst : null,
+        s_index : 0,
+        
+        getInst:function(){
+            
+            if(NetData.g_Inst === null)
+            {
+                NetData.g_Inst = new NetData();
+                NetData.g_Inst.init();
+            }
+            return NetData.g_Inst;
+            
+        },
+
+        destoryInst:function(){
+            
+            if(NetData.g_Inst !== null){
+                NetData.g_Inst = null;
+            }
+        }
+    },
+    
+    properties: {
+        //请求参数
+        reqBetList : [],//投注数据
+
+
+
+
+        //响应
+        timeFlag : 1,//投注阶段 1-第一阶段  2-第二阶段
+        session : null,
+        periodId : 1,//期次
+        receiveTime : 0,//接收时间差
+        secs : 0,//彩期剩余秒数
+        betThreshold : 3,
+        ticketNo : "",//订单号
+        betLimit : 0,//投注限额
+        totalBetLimit : 0,//总投注限额
+
+        tableArray : [],//同桌人
+        initData : null,//初始化data
+        rewardData : null,//结算data
+        secondData : null,//第二阶段数据data
+        historyList : [],//历史走势
+        orderList : [],//订单data
+
+        //sdk        
+        initFlag : 0 //提前初始化 0:没好  1:好了 2.停售
+    },
+    
+    init : function(){
+
+    },
+
+    clear: function(){
+    },
+});
+
+module.exports = {
+    NetData : NetData
+};

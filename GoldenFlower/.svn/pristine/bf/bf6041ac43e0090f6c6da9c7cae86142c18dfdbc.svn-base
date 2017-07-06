@@ -1,0 +1,721 @@
+
+var CryptoJS = require("core");
+require("aes");
+var NetData = require("NetData");
+
+var KeyValue = cc.Class({
+    properties: {
+        key : "",
+        value : ""
+    }
+});
+
+var CusMap = cc.Class({
+    properties:{
+        maps : {
+            default : [],
+            type : [KeyValue],
+            serializable: false
+        }
+    },
+    
+    set : function(key, value){
+        var s_key = key.toString();
+        var flag = false;
+        
+        for(var i = 0; i < this.maps.length; ++i){
+            if(this.maps[i].key === s_key){
+                flag = true;
+                this.maps[i].value = value;
+                break;
+            }
+        }
+        
+        if(flag === false){
+            var keyValue = new KeyValue();
+            keyValue.key = s_key;
+            keyValue.value = value;
+            this.maps.push(keyValue);
+        }
+    },
+    
+    get : function(key){
+        var s_key = key.toString();
+        
+        for(var i = 0; i < this.maps.length; ++i){
+            if(this.maps[i].key === s_key){
+                return this.maps[i].value;
+            }
+        }
+        
+        return null;
+    },
+
+    clear : function(key){
+        for(var i = 0; i < this.maps.length; ++i){
+            if(this.maps[i].key == key){
+                this.maps.splice(i, 1);
+                break;
+            }
+        }
+    }
+});
+
+var NetWork = cc.Class({
+    send : function(requestId, requestHeaders, requestData, callfunc){
+        var xhr = cc.loader.getXMLHttpRequest();
+
+        if (!CC_JSB){
+            if (window.aliLotteryCasinoSDK) {
+                xhr = window.aliLotteryCasinoSDK.getHttpRequestObject();
+            }
+        }
+
+        xhr.open("POST", "http://10.0.20.172:8080/gateway/process");
+        //xhr.open("POST", "http://172.16.20.161:7080/gateway/process");//"http://172.16.20.175:8080/gateway/process"); //"http://10.0.1.232:7080/new_gateway/process"); 
+        xhr.timeout = 15000;//15s超时
+        
+        //设置请求头
+        for(let i = 0; i < requestHeaders.length; ++i){
+            xhr.setRequestHeader(requestHeaders[i].key, requestHeaders[i].value);
+        }
+        
+        xhr.send(requestData);
+    
+        xhr.onload = function () {
+            callfunc(requestId, xhr);
+        };
+        
+        xhr.onerror = function(){
+            callfunc(requestId, xhr);
+        };
+        
+        xhr.ontimeout = function(){
+            callfunc(requestId, xhr);
+        };
+    }
+});
+
+var DataOper = cc.Class({
+    
+    statics : {
+        g_DataOperInst : null,
+        s_index : 0,
+        
+        getInst:function(){
+            
+            if(DataOper.g_DataOperInst === null)
+            {
+                DataOper.g_DataOperInst = new DataOper();
+                DataOper.g_DataOperInst.init();
+            }
+            return DataOper.g_DataOperInst;
+            
+        },
+
+        destoryInst:function(){
+            
+            if(DataOper.g_DataOperInst !== null){
+                DataOper.g_DataOperInst = null;
+            }
+        }
+    },
+
+    properties : {
+        //请求data
+        requestData : "",
+        //请求id
+        requestId : 0,
+        //aes Key
+        aesKey : "817fed95f9e16bed",//秘钥，写死
+        
+        //****************请求头信息**********
+        //请求头数组
+        requestHeaders : {
+            default : [],
+            type : [KeyValue],
+            serializable: false
+        },
+        //命令号
+        headerCmd : 0, //初始化-100  投注-101  结算-103
+        //sig
+        headerSig : "",
+        //版本号
+        headerVer : "1.0",
+        //会话标识
+        headerToken : "3706201779",//"3706201779",
+        //游戏渠道实例标识
+        gameToken : "ad80db994dabb90b42db00214b8d301d-9-901-1202",//"ddd76cd6e9b62dc2259aa772a4501b22-9-951-926",
+        //游戏标识
+        //headerGid : "10004"  //每个游戏在这里写死  同花顺-10000  小怪联盟-10001  旗开得胜-10002 奇幻宝石-10003 老虎机-10004 地产大亨-10005
+    },
+    
+    init : function(){
+        this.callfuncs = new CusMap();
+        this.callnode = new CusMap();
+        this.callcmd = new CusMap();
+        cc.log("jb=" + CC_JSB);
+        
+        if (!CC_JSB){
+            this.gameToken = this.GetQueryString("accessToken");
+        
+            if(this.gameToken == null){                
+                this.gameToken = "ad80db994dabb90b42db00214b8d301d-9-901-1202";//"ddd76cd6e9b62dc2259aa772a4501b22-9-951-926";
+                let tok = this.GetQueryString("tok");
+
+                if(tok){
+                    this.headerToken = tok;
+                    console.log("tok=" + this.headerToken);
+                }
+                else{
+                    this.headerToken = "";
+                }
+                //test
+                /*var myDate = new Date();
+                this.headerToken = myDate.getTime();*/
+            }
+        }
+        else{
+
+        }        
+
+        console.log("this.gameToken = " + this.gameToken);
+    },
+
+    GetQueryString : function(name)
+    {
+        var reg = new RegExp("(^|&)"+ name +"=([^&]*)(&|$)");
+        var r = window.location.search.substr(1).match(reg);
+        if(r!==null)return  unescape(r[2]); return null;
+    },
+    
+    setRequestHeader : function(){
+        this.requestHeaders = [];
+
+        var keyValue = new KeyValue();
+        keyValue.key = "cmd";
+        keyValue.value = this.headerCmd.toString();
+        this.requestHeaders.push(keyValue);
+        
+        keyValue = new KeyValue();
+        keyValue.key = "Content-Type";
+        keyValue.value = "text/plain";
+        this.requestHeaders.push(keyValue);
+        
+        /*keyValue = new KeyValue();
+        keyValue.key = "cid";
+        keyValue.value = this.headerCid.toString();
+        this.requestHeaders.push(keyValue);*/
+        
+        keyValue = new KeyValue();
+        keyValue.key = "sig";
+        keyValue.value = this.headerSig.toString();
+        this.requestHeaders.push(keyValue);
+        
+        keyValue = new KeyValue();
+        keyValue.key = "ver";
+        keyValue.value = this.headerVer.toString();
+        this.requestHeaders.push(keyValue);
+        
+        keyValue = new KeyValue();
+        keyValue.key = "tok";
+        keyValue.value = this.headerToken.toString();
+        this.requestHeaders.push(keyValue);
+
+        keyValue = new KeyValue();
+        keyValue.key = "gameToken";
+        keyValue.value = this.gameToken.toString();
+        this.requestHeaders.push(keyValue);
+        
+        /*keyValue = new KeyValue();
+        keyValue.key = "gid";
+        keyValue.value = this.headerGid.toString();
+        this.requestHeaders.push(keyValue);*/
+    },
+    
+    request : function(callFunc, self){
+        if(this.headerCmd != 105){
+            console.log("request-----------data = " + this.requestData + ";cmd:" + this.headerCmd);
+        }
+        
+        this.callfuncs.set(DataOper.s_index, callFunc);
+        this.callnode.set(DataOper.s_index, self);
+        this.callcmd.set(DataOper.s_index, this.headerCmd);
+        //aes加密
+        this.requestData = this.AESEncryption(this.requestData, this.aesKey);
+        //Base64
+        //this.requestData = Base64.encode(this.requestData);
+        //gzip
+        //this.requestData = this.requestData;
+        //md5
+        this.headerSig = CryptoJS.MD5(this.requestData);
+        //请求头
+        this.setRequestHeader();
+        //send
+        var netWork = new NetWork();
+        netWork.send(DataOper.s_index, this.requestHeaders, this.requestData, this.onHttpRequestCompleted);
+        DataOper.s_index++;
+    },
+    
+    /**
+     * 联网回调
+     * @Param requestId 请求id
+     * @param status   联网状态
+     * @param responeData 响应data
+     */
+    onHttpRequestCompleted : function(requestId, xhr){
+        console.log("onHttpRequestCompleted.xhr.status=" + xhr.status);
+        var callFunc = DataOper.getInst().callfuncs.get(requestId);
+        var callNode = DataOper.getInst().callnode.get(requestId);
+        var callCmd = DataOper.getInst().callcmd.get(requestId);
+        cc.log("callCmd=" + callCmd + "/ln=" + DataOper.getInst().callcmd.maps.length + "'" + DataOper.getInst().callfuncs.maps.length + "'" + DataOper.getInst().callnode.maps.length);
+        DataOper.getInst().callfuncs.clear(requestId);
+        DataOper.getInst().callnode.clear(requestId);
+        DataOper.getInst().callcmd.clear(requestId);
+
+        if((xhr.status >= 200 && xhr.status < 300) || xhr.status === 304){
+            //取http头
+            //命令号
+            var cmd = xhr.getResponseHeader("cmd");
+            cmd = parseInt(cmd);
+            //res
+            var res = xhr.getResponseHeader("res");
+            //msg
+            var msg = xhr.getResponseHeader("msg");
+            msg = decodeURIComponent(msg);
+            //sig
+            var sig = xhr.getResponseHeader("sig");
+            cc.log("xhr.status=" + xhr.status + "|re=" + res);
+            
+            if(res == 0){
+                //取body
+                var body = xhr.responseText;
+                //md5验证
+                var t_sig = CryptoJS.MD5(body);
+                let t_sig_str = new String(t_sig);
+                let sig_str = new String(sig);
+                t_sig_str = t_sig_str.trim();
+                sig_str = sig_str.trim();
+
+                if(t_sig_str == sig_str){
+                    console.log("valify right");
+                    DataOper.getInst().parserServerData(body, cmd);
+                    callFunc(cmd, res, msg, callNode);
+
+                    //更新账户余额
+                    //初始化调过了，不调了。
+                    if (!CC_JSB){
+                        if (window.aliLotteryCasinoSDK) {
+                            switch(cmd){
+                                case 101://bet
+                                case 102://clear
+                                case 103://reward
+                                {
+                                    window.aliLotteryCasinoSDK.updateUserInfo();
+                                }
+                                break;
+                                default:
+                                break;
+                            }                            
+                        }
+                    }
+                }
+                else{
+                    callFunc(cmd, -1, "加密验证错误", callNode);
+                }
+            }else{
+                console.log("报错---res:" + res + "----msg:" + msg);
+
+                //纯业务logic
+                if((cmd == 100) && (res == 999999)){
+                    NetData.NetData.getInst().initFlag = 2;
+                    NetData.NetData.getInst().stopSellingDesc = msg;
+                }
+                //end 业务
+                callFunc(cmd, res, msg, callNode);
+            }
+        }else{
+            //联网失败
+            console.log("http status:" + xhr.status + "|callCmd=" + callCmd);
+            callFunc(callCmd, -1, "网络可能不好哦，请重试", callNode);
+        }
+    },
+    
+    /**
+     *解析服务器返回数据
+     * @param data
+     * @param cmd
+     */
+     parserServerData : function(data, cmd){
+         //gzip解压
+         //data = data;
+         //Base64
+         //data = Base64.decode(data);
+         //aes解密
+         data = this.AESDecrypt(data, this.aesKey);
+         var iNum1 = parseInt(cmd);
+
+         if(iNum1 != 105){
+             console.log("data = " + data + ", cmd = " + cmd);
+         }
+         
+         switch(iNum1){
+             case 100:{
+                 this.parserInit(data);
+             }
+             break;
+             case 101:{
+                 this.parserBet(data);
+             }
+             break;
+             case 102:{
+                 this.parseClear(data);
+             }
+             break;
+             case 103:{
+                 this.parserReward(data);
+             }
+             break;
+             case 104:{
+                 this.parseSecondData(data);
+             }
+             break;
+             case 105:{
+                 this.parseTable(data);
+             }
+             break;
+             case 106:{
+                this.parseOrderList(data);
+             }
+             break;
+             case 107 : {
+                this.parserHistory(data);
+             }
+             break;
+             default:
+             break;
+         }
+     },
+     
+    //AES加密
+    AESEncryption : function (data, aesKey) {
+        var key = CryptoJS.enc.Utf8.parse(aesKey);
+        var iv  = CryptoJS.enc.Utf8.parse(aesKey);
+        var srcs = CryptoJS.enc.Utf8.parse(data);
+        var encrypted = CryptoJS.AES.encrypt(srcs, key, { iv: iv,mode:CryptoJS.mode.ECB});
+        return encrypted.toString();
+    },
+    
+    //AES解密
+    AESDecrypt : function (data, aesKey) {
+        var key = CryptoJS.enc.Utf8.parse(aesKey);
+        var iv  = CryptoJS.enc.Utf8.parse(aesKey);
+        var decrypt = CryptoJS.AES.decrypt(data, key, { iv: iv,mode:CryptoJS.mode.ECB});
+        return CryptoJS.enc.Utf8.stringify(decrypt).toString();
+    },
+     
+    /**
+     * 解析初始化
+     * @param data
+     */
+    parserInit : function(data){
+        var netData = NetData.NetData.getInst();
+        netData.initData = JSON.parse(data);
+        cc.log("netData.initData.oddsList ", netData.initData.oddsList);
+        netData.session = netData.initData.session;
+        netData.periodId = netData.initData.periodId;
+        netData.ticketNo = netData.initData.ticketNo;
+        netData.betLimit = netData.initData.betLimit;
+        netData.totalBetLimit = netData.initData.totalBetLimit;
+
+        var periodEndTime = null;
+        if(netData.initData.status == 1){
+            netData.timeFlag = 1;
+            periodEndTime = netData.initData.periodEndTime1;
+        }
+        else if(netData.initData.status == 3 ||
+                netData.initData.status == 2 ||
+                netData.initData.status == 4){
+            netData.timeFlag = 2;
+            periodEndTime = netData.initData.periodEndTime2;
+        }
+
+        if(periodEndTime != null){
+            netData.lotteryId = netData.initData.lotteryId;
+            netData.lotteryIndex = netData.initData.lotteryIndex;
+            
+            var te = new Date();
+            let localTime = te.getTime();
+            let severTime = netData.initData.serverTime;
+            netData.receiveTime = localTime - severTime;
+            netData.secs = Math.floor((periodEndTime - severTime) / 1000 - netData.betThreshold - 3);
+            cc.log("receiveTime=" + netData.receiveTime + "|" + netData.secs);
+        }        
+        //
+        netData.initFlag = 1;
+    },
+    
+    /**
+     * 解析投注
+     */
+     parserBet : function(data){
+        var netData = NetData.NetData.getInst();
+        var objRoot = JSON.parse(data);
+        netData.betLimit = objRoot.betLimit;
+        netData.totalBetLimit = objRoot.totalBetLimit;
+        netData.ticketNo = objRoot.ticketNo;
+
+
+        var te = new Date();
+        let localTime = te.getTime();
+        let severTime = objRoot.serverTime;
+        let tmp = localTime - severTime;
+
+        if(tmp < netData.receiveTime){
+            netData.receiveTime = tmp;
+            netData.secs = Math.floor((netData.betData.periodEndTime - severTime) / 1000 - netData.betThreshold - 3);
+            cc.log("receiveTime=" + netData.receiveTime + "|" + netData.secs);
+        }
+     },
+
+     parseClear : function(data){
+        var netData = NetData.NetData.getInst(); 
+        var objRoot = JSON.parse(data);
+        netData.ticketNo = "";
+        netData.betLimit = netData.initData.betLimit;
+        netData.totalBetLimit = netData.initData.totalBetLimit;
+        var te = new Date();
+        let localTime = te.getTime();
+        let severTime = objRoot.serverTime;
+        let tmp = localTime - severTime;
+
+        if(tmp < netData.receiveTime){
+            netData.receiveTime = tmp;
+            netData.secs = Math.floor((objRoot.periodEndTime - severTime) / 1000 - netData.betThreshold - 3);
+            cc.log("receiveTime=" + netData.receiveTime + "|" + netData.secs);
+        }
+     },
+     
+     /**
+      * 结算
+      */
+    parserReward : function(data){
+        var netData = NetData.NetData.getInst(); 
+        var objRoot = JSON.parse(data);
+        netData.rewardData = objRoot;
+        // netData.rewardData = JSON.parse(data);      
+
+        netData.periodId = netData.rewardData.nextPeriodId;
+        netData.timeFlag = netData.rewardData.nextTimeFlag;
+        netData.initData.periodEndTime2 = object.periodEndTime2;
+
+        if(objRoot.periodEndTime != undefined){
+            var te = new Date();
+            let localTime = te.getTime();
+            let severTime = objRoot.serverTime;
+            netData.receiveTime = localTime - severTime;
+            netData.secs = Math.floor((objRoot.periodEndTime1 - severTime) / 1000 - netData.betThreshold - 3);
+            cc.log("receiveTime=" + netData.receiveTime + "|" + netData.secs);
+        }
+    },
+
+    parseTable : function(data) {
+        var netData = NetData.NetData.getInst();
+        var objRoot = JSON.parse(data);
+        var te = new Date();
+        let localTime = te.getTime();
+        let severTime = objRoot.serverTime;
+        let tmp = localTime - severTime;
+
+        if(tmp < netData.receiveTime){
+            netData.receiveTime = tmp; 
+            netData.secs = Math.floor((objRoot.periodEndTime - severTime) / 1000 - netData.betThreshold - 3);
+            cc.log("receiveTime=" + netData.receiveTime + "|" + netData.secs);
+        }
+
+        //解析list
+        netData.tableArray = [];
+        netData.tableArray = objRoot.list;
+    },
+
+    parseSecondData : function(data){
+        var netData = NetData.NetData.getInst();
+        var objRoot = JSON.parse(data);
+        netData.secondData = objRoot;
+        netData.timeFlag = 2;
+        let severTime = objRoot.serverTime;
+        netData.secs = Math.floor((netData.initData.periodEndTime2 - severTime) / 1000 - netData.betThreshold - 3);
+        cc.log("明投剩余时间********" + netData.initData.periodEndTime2 + " - " + severTime + " = " + netData.secs);
+  /*
+        var te = new Date();
+        let localTime = te.getTime();
+        let severTime = objRoot.serverTime;
+        let tmp = localTime - severTime;
+
+        if(tmp < netData.receiveTime){
+            netData.receiveTime = tmp; 
+            netData.secs = Math.floor((netData.initData.periodEndTime2 - severTime) / 1000 - netData.betThreshold - 3);
+            cc.log("receiveTime=" + netData.receiveTime + "|" + netData.secs);
+        }
+        */
+    },
+
+    parseOrderList : function(data){
+        var netData = NetData.NetData.getInst();
+        var objRoot = JSON.parse(data);
+        netData.orderList = [];
+        netData.orderList = objRoot.data;
+    },
+
+    parserHistory : function(data){
+        var netData = NetData.NetData.getInst();
+        var objRoot = JSON.parse(data);
+        netData.historyList = [];
+        netData.historyList = objRoot.historyList;
+    },
+    
+    /**
+     * 初始化
+     * @param
+     * 
+     */
+    getInit : function(session, callFunc, self){
+        if(session == null){
+            this.requestData = "{}";
+        }
+        else{
+            var obj = new Object();
+            obj.session = session;
+            this.requestData = JSON.stringify(obj);
+        }
+
+        //提前初始化
+        NetData.NetData.getInst().initFlag = 0;
+        //设置命令号，每个请求都不一样
+        this.headerCmd = 100;
+        //请求网络
+        this.request(callFunc, self);
+    },
+    
+    /**
+     * 投注
+     * @param ticket_no 订单号，首次投注为空
+     * @param step 步数
+     * @Parma trans_data 数据交互
+     */
+    getBet : function(callFunc, self){
+        var netData = NetData.NetData.getInst();
+        this.requestData = "";
+        //拼成json串，每个请求都不一样
+        var obj = new Object();
+        var te = new Date();
+        obj.tid = te.getTime().toString();
+        te = null;
+        obj.betList = netData.reqBetList;
+        obj.periodId = netData.periodId;
+        obj.timeFlag = netData.timeFlag;
+        obj.session = netData.session;
+        this.requestData = JSON.stringify(obj);
+        obj = null;
+        //设置命令号，每个请求都不一样
+        this.headerCmd = 101;
+        //请求网络
+        this.request(callFunc, self);
+    },
+
+    getClear : function(callFunc, self) {
+        var netData = NetData.NetData.getInst();
+        this.requestData = "";
+        //拼成json串，每个请求都不一样
+        var obj = new Object();
+        obj.periodId = netData.periodId;
+        obj.session = netData.session;
+        obj.timeFlag = netData.timeFlag;
+        this.requestData = JSON.stringify(obj); 
+        obj = null;
+        //设置命令号，每个请求都不一样
+        this.headerCmd = 102;
+        //请求网络
+        this.request(callFunc, self);
+    },
+     
+    /**
+     * 结算
+     * @param ticket_no 订单号
+     */
+    getReward : function(callFunc, self){
+        this.requestData = "";
+        //拼成json串，每个请求都不一样
+        var obj = new Object();
+        obj.periodId = NetData.NetData.getInst().periodId;
+        obj.session = NetData.NetData.getInst().session;
+        obj.ticketNo = NetData.NetData.getInst().ticketNo;
+
+        // obj.uids = new Array();
+        obj.uids = [12, 123];
+        // for(let i = 0; i < NetData.NetData.getInst().tableArray.length(); ++i){
+        //     obj.uids.push(NetData.NetData.getInst().tableArray[i].uid);
+        // }
+        
+        this.requestData = JSON.stringify(obj); 
+        obj = null;
+        //设置命令号，每个请求都不一样
+        this.headerCmd = 103;
+        //请求网络
+        this.request(callFunc, self);
+    },
+
+    getTable : function( callFunc, self) {
+        this.requestData = "";
+        //拼成json串，每个请求都不一样
+        var obj = new Object();
+        obj.list = NetData.NetData.getInst().tableArray;
+        obj.periodId = NetData.NetData.getInst().periodId; 
+        obj.session = NetData.NetData.getInst().session;
+        obj.timeFlag = NetData.NetData.getInst().timeFlag;
+        this.requestData = JSON.stringify(obj);
+        obj = null;
+        this.headerCmd = 105;
+        //请求网络
+        this.request(callFunc, self);
+    },
+
+    /**
+     * 获取二阶段数据
+     */
+    getSecondData  :function(callFunc, self){
+        this.requestData = "";
+        //拼成json串，每个请求都不一样
+        var obj = new Object();
+        obj.periodId = NetData.NetData.getInst().periodId; 
+        obj.session = NetData.NetData.getInst().session;
+        this.requestData = JSON.stringify(obj);
+        obj = null;
+        this.headerCmd = 104;
+        //请求网络
+        this.request(callFunc, self);
+    },
+
+    getOrderList : function(callFunc, self){
+        this.requestData = "";
+        this.headerCmd = 106;
+        //请求网络
+        this.request(callFunc, self);        
+    },
+
+    getHistory  : function(callFunc, self){
+        this.requestData = "";
+        //拼成json串，每个请求都不一样
+        var obj = new Object();
+        obj.session = NetData.NetData.getInst().session;
+        this.requestData = JSON.stringify(obj);
+        obj = null;
+        this.headerCmd = 107;
+        //请求网络
+        this.request(callFunc, self);
+    }
+});
+
+module.exports = {
+    DataOper : DataOper
+};
